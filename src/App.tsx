@@ -120,7 +120,8 @@ export default function App() {
   const photoInput = useRef<HTMLInputElement>(null);
   const dateInput = useRef<HTMLInputElement>(null);
   const saveTimers = useRef(new Map<string, number>());
-  const followCaret = useRef(false);
+  /** After an edit, bring the caret's page into view: with a page turn, or straight there for a new entry. */
+  const followCaret = useRef<false | 'turn' | 'jump'>(false);
   const blurTimer = useRef<number | null>(null);
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
@@ -314,7 +315,8 @@ export default function App() {
       entriesRef.current = sortEntries([...entriesRef.current, e]);
       setPanel(null);
       if (!open) setOpen(true);
-      followCaret.current = true;
+      // Go straight to the new page: a page turn on top of the zoom and the keyboard opening is too much at once.
+      followCaret.current = 'jump';
       focusEditor(e, 0);
     },
     [focusEditor, scheduleSave, open],
@@ -348,7 +350,7 @@ export default function App() {
     const pos = t.selectionStart;
     const typedOne = v.length === before.length + 1 && pos > 0 && v.slice(0, pos - 1) + v.slice(pos) === before && !/\s/.test(v[pos - 1]);
     setFresh(typedOne && settings?.writeIn && !reducedMotion ? { entryId: id, offset: pos } : null);
-    followCaret.current = true;
+    followCaret.current = 'turn';
     updateEntry(id, { body: v });
     readSel();
   }, [updateEntry, readSel, settings?.writeIn, reducedMotion]);
@@ -458,8 +460,11 @@ export default function App() {
 
   useEffect(() => {
     if (!caret || !followCaret.current || !open) return;
+    const how = followCaret.current;
     followCaret.current = false;
-    if (!visiblePages(mode, spread).includes(caret.page)) goSpread(spreadOfPage(mode, caret.page));
+    if (visiblePages(mode, spread).includes(caret.page)) return;
+    if (how === 'jump') setSpread(spreadOfPage(mode, caret.page));
+    else goSpread(spreadOfPage(mode, caret.page));
   }, [caret, mode, spread, goSpread, open]);
 
   // --- Photos -----------------------------------------------------------------
@@ -767,7 +772,7 @@ export default function App() {
           value={editingEntry?.date ?? todayISO()}
           onChange={(e) => {
             if (editing && e.target.value) {
-              followCaret.current = true;
+              followCaret.current = 'turn';
               updateEntry(editing, { date: e.target.value });
             }
             ta.current?.focus({ preventScroll: true });

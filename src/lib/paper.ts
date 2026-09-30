@@ -129,3 +129,28 @@ export const MARBLE = svgUrl(`
   <rect width='500' height='500' filter='url(#m)'/>
   <rect width='500' height='500' filter='url(#v)' opacity='.8'/>
 </svg>`);
+
+/**
+ * Turn an SVG texture (drawn by noise filters, which are slow to repaint) into a
+ * plain bitmap once, so zooming and page turns don't re-run the filters.
+ * Returns a CSS url() for the bitmap, or null if the browser can't do it.
+ */
+export async function rasterize(cssUrl: string): Promise<string | null> {
+  try {
+    const src = /^url\("(.*)"\)$/.exec(cssUrl)?.[1];
+    if (!src) return null;
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !canvas.width) return null;
+    ctx.drawImage(img, 0, 0);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+    return blob ? `url("${URL.createObjectURL(blob)}")` : null;
+  } catch {
+    return null;
+  }
+}

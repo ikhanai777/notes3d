@@ -146,7 +146,9 @@ export function Book(props: BookProps) {
     let ty: number;
     if (prev && prev.page === w.page && Math.abs(prev.scale - sc) < 1e-3) {
       const y = prev.ty + w.caretY * sc;
-      ty = y > vis * 0.14 && y < vis * 0.66 ? clampTy(prev.ty) : clampTy(vis * 0.4 - w.caretY * sc);
+      // Hold still while the caret line is comfortably in view, even if the visible area
+      // changed a little (e.g. the keyboard turned out slightly taller or shorter than expected).
+      ty = y > vis * 0.14 && y < vis * 0.66 ? prev.ty : clampTy(vis * 0.4 - w.caretY * sc);
     } else ty = clampTy(vis * 0.4 - w.caretY * sc);
     writeCam.current = { page: w.page, scale: sc, ty };
     fitNow = placeCamera(viewBox(mode, open), CAMERAS.flat, sc, tx, ty);

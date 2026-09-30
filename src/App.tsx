@@ -54,6 +54,27 @@ function useViewport() {
   return vp;
 }
 
+const isTouch = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+
+/** The on-screen keyboard's height as last seen, remembered between sessions. */
+function keyboardGuess(screenH: number): number {
+  let seen = 0;
+  try {
+    seen = Number(localStorage.getItem('notes3d.keyboard')) || 0;
+  } catch {
+    // Storage unavailable: fall back to a typical phone keyboard.
+  }
+  return seen > 120 && seen < screenH * 0.7 ? seen : Math.round(screenH * 0.42);
+}
+
+function rememberKeyboard(h: number) {
+  try {
+    if (Math.abs((Number(localStorage.getItem('notes3d.keyboard')) || 0) - h) > 8) localStorage.setItem('notes3d.keyboard', String(Math.round(h)));
+  } catch {
+    // Not important if it can't be saved.
+  }
+}
+
 /** A value that only updates once it has stopped changing (e.g. while the keyboard slides in). */
 function useSettled<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -541,7 +562,12 @@ export default function App() {
   const areaTop = (wide ? 18 : 10) + vp.safeTop;
   // Zoom in on the writing on phones, and on any device while its on-screen keyboard is up.
   const softKeyboard = settledVvh < layoutH - 120;
-  const writingVisible = Math.min(area.h, settledVvh - areaTop - (wide ? 96 : 64));
+  // On touch screens the keyboard is about to cover the bottom of the screen. Plan the
+  // writing view for it from the first frame (using the last keyboard height seen), so
+  // the page moves once instead of settling and then jumping when the keyboard arrives.
+  if (softKeyboard) rememberKeyboard(layoutH - settledVvh);
+  const expectedVvh = softKeyboard ? settledVvh : editing && isTouch ? layoutH - keyboardGuess(layoutH) : settledVvh;
+  const writingVisible = Math.min(area.h, expectedVvh - areaTop - (wide ? 96 : 64));
   const writing =
     editing && caret && open && (mode === 'one' || softKeyboard) ? { page: caret.page, caretY: caret.y, visibleHeight: writingVisible } : null;
   // The page never scrolls; undo any scroll the browser makes to reveal the hidden input.
@@ -671,7 +697,9 @@ export default function App() {
         {editing && (
           <div
             className="editor-bar"
-            style={!wide && keyboardOpen ? { top: vp.vvTop + vp.vvh - 56, bottom: 'auto' } : undefined}
+            // Where the keyboard overlays the page without resizing it (iOS), sit on top of the keyboard.
+            // Where it resizes the window (Android), the bar's normal bottom position is already right.
+            style={!wide && keyboardOpen && vp.h - vp.vvh > 100 ? { top: vp.vvTop + vp.vvh - 56, bottom: 'auto' } : undefined}
             onPointerDown={(e) => (e.target as HTMLElement).closest('button') && e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
             role="toolbar"
@@ -761,7 +789,8 @@ export default function App() {
           onSelect={readSel}
           onKeyUp={readSel}
           onBlur={onBlur}
-          style={caret ? { top: Math.round(areaTop + Math.max(0, writingVisible) * 0.4) } : undefined}
+          // Near the top, where the keyboard never covers it, so the browser has no reason to scroll to it.
+          style={{ top: areaTop + 24 }}
         />
         <input
           ref={dateInput}

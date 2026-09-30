@@ -88,6 +88,7 @@ export default function App() {
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [stickerPicker, setStickerPicker] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [asking, setAsking] = useState<{ message: string; action: string; run: () => void } | null>(null);
   const vp = useViewport();
   const systemReduced = usePrefersReducedMotion();
 
@@ -618,13 +619,25 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                if (!editing) return;
-                const e = entries.find((x) => x.id === editing);
-                if (e && e.body.trim() && !window.confirm(`Tear out the entry from ${longDate(e.date)}? This cannot be undone.`)) return;
-                if (ta.current) ta.current.value = '';
-                updateEntry(editing, { body: '' });
-                entriesRef.current = entriesRef.current.map((x) => (x.id === editing ? { ...x, body: '' } : x));
-                endEditing();
+                const id = editing;
+                const e = entries.find((x) => x.id === id);
+                if (!id || !e) return;
+                const tear = () => {
+                  const t = saveTimers.current.get(id);
+                  if (t) clearTimeout(t);
+                  saveTimers.current.delete(id);
+                  entriesRef.current = entriesRef.current.filter((x) => x.id !== id);
+                  setEntries((list) => list.filter((x) => x.id !== id));
+                  if (ta.current) {
+                    ta.current.value = '';
+                    delete ta.current.dataset.entry;
+                    ta.current.blur();
+                  }
+                  setEditing(null);
+                  void deleteEntry(id).then(collectPhotos);
+                };
+                if (!e.body.trim()) tear();
+                else setAsking({ message: `Tear out the entry from ${longDate(e.date)}? This cannot be undone.`, action: 'Tear it out', run: tear });
               }}
               aria-label="Tear out this entry"
               title="Tear out this entry"
@@ -711,20 +724,30 @@ export default function App() {
                   a.click();
                   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
                 }}
-                onImport={async (f) => {
-                  if (!window.confirm('Restoring replaces every page in this journal with the backup. Continue?')) return;
-                  try {
-                    await importBackup(f);
-                    window.location.reload();
-                  } catch (err) {
-                    setToast(err instanceof Error ? err.message : 'That backup could not be read.');
-                  }
-                }}
-                onErase={async () => {
-                  if (!window.confirm('Erase every page and photo on this device? This cannot be undone.')) return;
-                  await eraseEverything();
-                  window.location.reload();
-                }}
+                onImport={(f) =>
+                  setAsking({
+                    message: 'Restoring replaces every page in this journal with the pages from the backup.',
+                    action: 'Restore backup',
+                    run: async () => {
+                      try {
+                        await importBackup(f);
+                        window.location.reload();
+                      } catch (err) {
+                        setToast(err instanceof Error ? err.message : 'That backup could not be read.');
+                      }
+                    },
+                  })
+                }
+                onErase={() =>
+                  setAsking({
+                    message: 'Erase every page and photo on this device? This cannot be undone.',
+                    action: 'Erase everything',
+                    run: async () => {
+                      await eraseEverything();
+                      window.location.reload();
+                    },
+                  })
+                }
                 onClose={() => {
                   setPanel(null);
                   setOpen(false);
@@ -741,6 +764,29 @@ export default function App() {
                 <img src={photos.get(lightbox)!.url} alt="Journal photo" />
               </figure>
             )}
+          </div>
+        )}
+
+        {asking && (
+          <div className="panel-backdrop confirm-backdrop" onClick={() => setAsking(null)}>
+            <div className="confirm" role="alertdialog" aria-modal="true" aria-label={asking.action} onClick={(e) => e.stopPropagation()}>
+              <p>{asking.message}</p>
+              <div className="btn-row">
+                <button className="btn" autoFocus onClick={() => setAsking(null)}>
+                  Keep it
+                </button>
+                <button
+                  className="btn danger"
+                  onClick={() => {
+                    const run = asking.run;
+                    setAsking(null);
+                    run();
+                  }}
+                >
+                  {asking.action}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

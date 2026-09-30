@@ -12,6 +12,7 @@ npm install
 npm run dev      # http://localhost:5173 (add --host to open it from your phone on the same Wi-Fi)
 npm test         # unit tests for page-fold geometry and pagination
 npm run build    # production build in dist/ (installable PWA, works offline)
+npm run build:single  # also writes dist/notes3d-single.html, one self-contained file
 ```
 
 Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml` (enable Pages → Source: GitHub Actions in the repo settings once).

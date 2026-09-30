@@ -1482,6 +1482,31 @@ button {
   color: #6b675f;
 }
 
+.confirm-backdrop {
+  z-index: 65;
+  align-items: center !important;
+}
+
+.confirm {
+  width: min(400px, calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  background-color: #f4ebd8;
+  background-image: var(--tex-grain);
+  border-radius: 6px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+  color: var(--ink);
+  animation: panelIn 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.confirm p {
+  margin: 0 0 8px;
+  font: 400 21px/1.4 var(--hand), cursive;
+}
+
+.confirm .btn-row {
+  justify-content: flex-end;
+}
+
 /* -------------------------------------------------------------- lightbox */
 
 .lightbox {

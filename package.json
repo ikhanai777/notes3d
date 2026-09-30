@@ -9,9 +9,15 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "build:single": "npm run build && node scripts/single-file.mjs"
+    "build:single": "npm run build && node scripts/single-file.mjs",
+    "build:app": "CAP=1 tsc -b && CAP=1 vite build && cap sync android",
+    "android:apk": "npm run build:app && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/share": "^8.0.2",
     "@fontsource/atkinson-hyperlegible": "^5.3.0",
     "@fontsource/caveat": "^5.3.0",
     "@fontsource/dancing-script": "^5.3.0",
@@ -23,6 +29,8 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

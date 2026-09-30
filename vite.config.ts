@@ -2,11 +2,15 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// The Android app (Capacitor) ships its files inside the APK, so it needs no service worker.
+const forApp = process.env.CAP === '1';
+
 export default defineConfig({
   // Relative paths so the build works from any sub-folder (e.g. GitHub Pages).
   base: './',
   plugins: [
     react(),
+    !forApp &&
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Notes3D Journal</string>
+    <string name="title_activity_main">Notes3D Journal</string>
+    <string name="package_name">com.notes3d.journal</string>
+    <string name="custom_url_scheme">com.notes3d.journal</string>
+</resources>

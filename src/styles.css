@@ -9,7 +9,8 @@
   --ink: #1b2440;
   --hand: 'Dancing Script';
   --hand-weight: 500;
-  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-b: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-t: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   color-scheme: light;
 }
 
@@ -1699,7 +1700,7 @@ button {
 .toast {
   position: fixed;
   left: 50%;
-  top: calc(14px + env(safe-area-inset-top, 0px));
+  top: calc(14px + var(--safe-t));
   transform: translateX(-50%);
   z-index: 70;
   max-width: 90vw;

@@ -17,11 +17,23 @@ import { canvasMeasurer, CLEAN_FONT, HAND_FONTS, loadFont, type Measurer } from 
 import { findCaret, hitTest, layoutBook, selectionRects, type BookLayout, type PageLayout } from './lib/layout';
 import { DEFAULT_SETTINGS, INKS, photoChar, stickerChar, type Entry, type Settings } from './lib/model';
 import { seedEntries } from './lib/seed';
+import { onBackButton, saveFile } from './lib/native';
 
 const sortEntries = (list: Entry[]) => [...list].sort((a, b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date < b.date ? -1 : 1));
 
+/** Height of the status bar area when the app draws edge to edge (Android app, notched phones). */
+function readSafeTop(): number {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;padding-top:var(--safe-area-inset-top, env(safe-area-inset-top, 0px))';
+  document.body.appendChild(probe);
+  const v = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+  probe.remove();
+  return v;
+}
+
 function useViewport() {
   const read = () => ({
+    safeTop: readSafeTop(),
     w: window.innerWidth,
     h: window.innerHeight,
     vvh: window.visualViewport?.height ?? window.innerHeight,
@@ -151,7 +163,7 @@ export default function App() {
   const wide = mode === 'two';
   const navSpace = wide ? 140 : 0;
   const bottomBar = wide ? 0 : 68;
-  const area = { w: Math.max(200, vp.w - navSpace * 2 - (wide ? 16 : 12)), h: Math.max(200, vp.h - bottomBar - (wide ? 36 : 20)) };
+  const area = { w: Math.max(200, vp.w - navSpace * 2 - (wide ? 16 : 12)), h: Math.max(200, vp.h - bottomBar - vp.safeTop - (wide ? 36 : 20)) };
 
   // Keep the spread valid when the mode or page count changes.
   const lastMode = useRef(mode);
@@ -456,6 +468,24 @@ export default function App() {
     [insertText],
   );
 
+  // --- Android back button ------------------------------------------------------
+  const backState = useRef({ asking, lightbox, stickerPicker, panel, editing, open });
+  backState.current = { asking, lightbox, stickerPicker, panel, editing, open };
+  useEffect(
+    () =>
+      onBackButton(() => {
+        const b = backState.current;
+        if (b.asking) setAsking(null);
+        else if (b.lightbox !== null) setLightbox(null);
+        else if (b.stickerPicker) setStickerPicker(false);
+        else if (b.panel) setPanel(null);
+        else if (b.editing) endEditing();
+        else return false;
+        return true;
+      }),
+    [endEditing],
+  );
+
   // --- Keyboard shortcuts -------------------------------------------------------
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -487,7 +517,7 @@ export default function App() {
   const perspective = settings?.view === 'perspective';
   const tilted = perspective && !editing;
   const fit = fitBook(mode, open, area.w, area.h, tilted);
-  const areaTop = wide ? 18 : 10;
+  const areaTop = (wide ? 18 : 10) + vp.safeTop;
   let shift = 0;
   if (editing && caret && keyboardOpen) {
     const barH = 56;
@@ -741,12 +771,12 @@ export default function App() {
                 settings={settings}
                 onChange={updateSettings}
                 onExport={async () => {
-                  const blob = await exportBackup();
-                  const a = document.createElement('a');
-                  a.href = URL.createObjectURL(blob);
-                  a.download = `journal-backup-${todayISO()}.json`;
-                  a.click();
-                  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+                  try {
+                    await saveFile(await exportBackup(), `journal-backup-${todayISO()}.json`);
+                  } catch (err) {
+                    // Closing the share sheet without choosing anything is not an error.
+                    if (!/cancel/i.test(String(err))) setToast('The backup could not be saved. Try again.');
+                  }
                 }}
                 onImport={(f) =>
                   setAsking({

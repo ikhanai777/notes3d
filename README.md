@@ -15,6 +15,26 @@ npm run build    # production build in dist/ (installable PWA, works offline)
 npm run build:single  # also writes dist/notes3d-single.html, one self-contained file
 ```
 
+### Android app
+
+The Android app wraps the same web app with [Capacitor](https://capacitorjs.com) (`android/`). Everything is packaged inside the APK and works offline.
+
+```sh
+npm run android:apk   # builds the web app, syncs it into android/, and runs Gradle
+# → android/app/build/outputs/apk/release/app-release.apk
+```
+
+You need JDK 21 and the Android SDK (platform 36, build-tools 36), with `ANDROID_HOME` set or `sdk.dir` in `android/local.properties`. Release builds are signed with the key described in `android/keystore.properties`, which is not committed:
+
+```properties
+storeFile=notes3d-release.jks
+storePassword=…
+keyAlias=notes3d
+keyPassword=…
+```
+
+Keep using the same keystore for every release. Android only installs an update over the existing app, keeping its journal data, when the new APK is signed with the same key. In the app, *Export backup* opens the Android share sheet so the backup can be saved to Files or Drive. The Android back button closes dialogs and panels, and stops writing.
+
 Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml` (enable Pages → Source: GitHub Actions in the repo settings once).
 
 ## Using the journal

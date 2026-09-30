@@ -1,25 +1,42 @@
 import type { ReactNode } from 'react';
+import type { CameraAngles } from '../lib/camera';
 import type { ThemeId } from '../lib/model';
 
+interface DeskProps {
+  theme: ThemeId;
+  props: boolean;
+  onPen: () => void;
+  /** The desk tilts with the same camera as the book, so everything shares one perspective. */
+  camera: CameraAngles;
+  distance: number;
+  children: ReactNode;
+}
+
 /** The wooden desk, window light, and a few things lying around. */
-export function Desk({ theme, props, onPen, children }: { theme: ThemeId; props: boolean; onPen: () => void; children: ReactNode }) {
+export function Desk({ theme, props, onPen, camera, distance, children }: DeskProps) {
+  const showProps = props && theme !== 'plain';
   return (
     <div className={`desk theme-${theme}`}>
-      <div className="desk-wood" />
+      <div
+        className="desk-plane"
+        style={{ transform: `perspective(${distance.toFixed(0)}px) rotateX(${camera.tilt}deg) rotateZ(${camera.turn}deg)` }}
+      >
+        <div className="desk-wood" />
+        {showProps && (
+          <div className="desk-props" aria-hidden>
+            <Cup />
+            <Glasses />
+          </div>
+        )}
+        {showProps && (
+          <button className="desk-pen" onClick={onPen} aria-label="New entry" title="New entry">
+            <Pen />
+          </button>
+        )}
+      </div>
       <div className="desk-light" />
       {theme === 'rainy' && <div className="desk-rain" />}
-      {props && theme !== 'plain' && (
-        <div className="desk-props" aria-hidden>
-          <Cup />
-          <Glasses />
-        </div>
-      )}
       {children}
-      {props && theme !== 'plain' && (
-        <button className="desk-pen" onClick={onPen} aria-label="New entry" title="New entry">
-          <Pen />
-        </button>
-      )}
       <div className="desk-vignette" />
     </div>
   );

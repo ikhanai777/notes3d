@@ -48,7 +48,7 @@ A journaling app that looks, moves, and feels like a real leather-bound paper jo
 | Phone | Single-page mode (one page visible, flips like a pocket notebook) | Two-page spreads don't fit portrait phones |
 | App shell | React + TypeScript, packaged as a PWA; Capacitor for iOS/Android store builds | One codebase; offline-capable |
 | Page rendering (as built) | DOM pages with a fold-geometry page turn: clip-path + reflection matrix + SVG shadows (§6.1) | Real, editable, accessible text on every page; smooth on phones without WebGL |
-| 3D curl (future option) | `three.js` cylindrical/conical curl shader | Rounder bend than a flat fold; heavier, text becomes textures |
+| 3D view (as built) | CSS 3D camera; pages as hinged strips that rise from the spine; turning pages lift and bend as strip chains | Realistic perspective with real, editable text; no WebGL needed |
 | Reduced motion | Short cross-fade instead of a turn | Accessibility |
 | Text layout | Custom paginator over a hidden DOM text layer (§7.3) | Exact line-to-ruled-line placement |
 | Ink input | Pointer Events API (pressure, tilt, `pointerType: pen`) | Stylus handwriting |

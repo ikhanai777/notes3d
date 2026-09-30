@@ -26,6 +26,7 @@ export type InkId = 'navy' | 'black' | 'sepia' | 'green' | 'burgundy';
 export type PaperId = 'ruled' | 'dotted' | 'grid' | 'blank';
 export type ThemeId = 'rainy' | 'morning' | 'evening' | 'plain';
 export type MotionPref = 'auto' | 'full' | 'reduced';
+export type ViewId = 'flat' | 'perspective';
 
 export interface Settings {
   owner: string;
@@ -40,6 +41,7 @@ export interface Settings {
   writeIn: boolean;
   motion: MotionPref;
   props: boolean;
+  view: ViewId;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   writeIn: true,
   motion: 'auto',
   props: true,
+  view: 'flat',
 };
 
 export const INKS: Record<InkId, { label: string; color: string }> = {

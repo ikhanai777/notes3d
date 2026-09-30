@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Book, fitBook, type GotoRequest } from './components/Book';
+import { CAMERAS, DISTANCE, PHONE_PERSPECTIVE } from './lib/camera';
 import { InkCtx, type InkContext, type PhotoInfo } from './components/context';
 import { Desk } from './components/Desk';
 import { Icon, type IconName } from './components/Icons';
@@ -88,6 +89,7 @@ export default function App() {
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [stickerPicker, setStickerPicker] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [lowPower, setLowPower] = useState(false);
   const [asking, setAsking] = useState<{ message: string; action: string; run: () => void } | null>(null);
   const vp = useViewport();
   const systemReduced = usePrefersReducedMotion();
@@ -482,7 +484,9 @@ export default function App() {
   }, [panel, lightbox, editing, open, spread, layout, mode, goSpread, newEntry, endEditing, openBook]);
 
   // --- Keeping the caret above the on-screen keyboard -------------------------
-  const fit = fitBook(mode, open, area.w, area.h);
+  const perspective = settings?.view === 'perspective';
+  const tilted = perspective && !editing;
+  const fit = fitBook(mode, open, area.w, area.h, tilted);
   const areaTop = wide ? 18 : 10;
   let shift = 0;
   if (editing && caret && keyboardOpen) {
@@ -549,7 +553,13 @@ export default function App() {
         className={`app ${wide ? 'is-wide' : 'is-narrow'} ${editing ? 'is-editing' : ''} ${reducedMotion ? 'reduced' : ''}`}
         style={{ '--ink': ink, '--hand': font.family, '--hand-weight': font.weight } as React.CSSProperties}
       >
-        <Desk theme={settings.theme} props={settings.props && wide} onPen={() => newEntry()}>
+        <Desk
+          theme={settings.theme}
+          props={settings.props && wide}
+          onPen={() => newEntry()}
+          camera={tilted ? (mode === 'one' ? PHONE_PERSPECTIVE : CAMERAS.perspective) : CAMERAS.flat}
+          distance={DISTANCE * fit.scale}
+        >
           <main className="stage" style={{ transform: shift ? `translateY(${-shift}px)` : undefined, top: areaTop, left: (vp.w - area.w) / 2, width: area.w, height: area.h }}>
             <Book
               mode={mode}
@@ -567,6 +577,11 @@ export default function App() {
               onTurnEnd={() => settings.haptics && haptic(8)}
               reducedMotion={reducedMotion}
               goto={goto}
+              perspective={perspective}
+              flatten={!!editing}
+              lowPower={lowPower}
+              onLowPower={() => setLowPower(true)}
+              compact={!wide}
             />
           </main>
         </Desk>
@@ -579,6 +594,15 @@ export default function App() {
                 <span>{label}</span>
               </button>
             ))}
+            <button
+              className="index-item index-view"
+              onClick={() => updateSettings({ ...settings, view: perspective ? 'flat' : 'perspective' })}
+              aria-pressed={perspective}
+              aria-label={perspective ? 'Switch to flat view' : 'Switch to 3D view'}
+            >
+              <Icon name={perspective ? 'flat' : 'cube'} size={wide ? 18 : 22} />
+              <span>{perspective ? 'Flat view' : '3D view'}</span>
+            </button>
             <button className="index-item index-write" onClick={() => newEntry()} aria-label="New entry">
               <Icon name="pen" size={wide ? 18 : 22} />
               <span>Write</span>

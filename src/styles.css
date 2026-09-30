@@ -69,9 +69,16 @@ button {
   background: #5e3c22;
 }
 
+.desk-plane {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  transition: transform 1s cubic-bezier(0.55, 0.05, 0.25, 1);
+}
+
 .desk-wood {
   position: absolute;
-  inset: -5%;
+  inset: -70% -45% -25% -45%;
   background:
     repeating-linear-gradient(180deg, transparent 0 238px, rgba(18, 9, 3, 0.55) 238px 240px, rgba(255, 220, 180, 0.07) 240px 241px, transparent 241px 242px),
     var(--tex-wood),
@@ -190,6 +197,7 @@ button {
 .stage {
   position: absolute;
   z-index: 1;
+  pointer-events: none;
   transition: transform 0.25s ease;
 }
 
@@ -215,8 +223,158 @@ button {
   height: 720px;
 }
 
-.spread-one {
+.book,
+.spread {
+  transform-style: preserve-3d;
+}
+
+.fold-plane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1000px;
+  height: 720px;
+  pointer-events: none;
+}
+
+.fold-plane-one {
   clip-path: inset(-60px -80px -60px 482px);
+}
+
+/* 3D sheets: a page as hinged strips (components/Sheet.tsx). */
+.sheet,
+.sheet-next {
+  position: absolute;
+  top: 0;
+  left: 500px;
+  width: 0;
+  height: 720px;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+.sheet-next {
+  left: auto;
+}
+
+.sheet,
+.sheet-strip {
+  transition: transform 1s cubic-bezier(0.55, 0.05, 0.25, 1);
+}
+
+.sheet-strip {
+  position: absolute;
+  top: 0;
+  height: 720px;
+  transform-style: preserve-3d;
+}
+
+.sheet-face {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Neighbouring strips overlap slightly so no seam shows at the hinges. */
+  left: -2px;
+  right: -2px;
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.sheet-back {
+  transform: rotateY(180deg);
+}
+
+.sheet-page {
+  position: absolute;
+  top: 0;
+  width: 500px;
+  height: 720px;
+  margin-left: 2px;
+}
+
+.sheet-shade,
+.sheet-page-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.sheet-right {
+  --from-spine: 90deg;
+}
+
+.sheet-left {
+  --from-spine: 270deg;
+}
+
+.sheet-leaf,
+.sheet-leaf .sheet-strip {
+  transition: none;
+}
+
+.sheet-leaf .sheet-face {
+  will-change: opacity;
+}
+
+/* Thickness of the page block and the cover boards, seen in the 3D view. */
+.block-edge {
+  position: absolute;
+  top: 0;
+  height: 720px;
+  pointer-events: none;
+  transition: transform 1s cubic-bezier(0.55, 0.05, 0.25, 1), width 1s, height 1s;
+}
+
+.block-edge-x {
+  transform-origin: 0 50%;
+  background:
+    linear-gradient(180deg, rgba(60, 40, 20, 0.2), transparent 12%, transparent 88%, rgba(60, 40, 20, 0.25)),
+    repeating-linear-gradient(90deg, #f1e6cd 0 0.9px, #c8b690 0.9px 1.5px);
+  filter: brightness(0.86);
+}
+
+.block-edge-left {
+  transform-origin: 100% 50%;
+}
+
+.block-edge-y {
+  top: 720px;
+  transform-origin: 50% 0;
+  background:
+    linear-gradient(90deg, rgba(60, 40, 20, 0.25), transparent 8%, transparent 92%, rgba(60, 40, 20, 0.2)),
+    repeating-linear-gradient(180deg, #f4ead3 0 0.9px, #cdbc97 0.9px 1.5px);
+}
+
+.board-edge {
+  position: absolute;
+  pointer-events: none;
+  background: linear-gradient(180deg, #3b2213, #1f1008);
+}
+
+.board-edge-bottom {
+  top: 734px;
+  height: 7px;
+  transform-origin: 50% 0;
+  transform: rotateX(-90deg);
+}
+
+.board-edge-right {
+  left: 1016px;
+  top: -14px;
+  width: 7px;
+  height: 748px;
+  transform-origin: 0 50%;
+  transform: rotateY(90deg);
+  background: linear-gradient(90deg, #3b2213, #1f1008);
+}
+
+.spread-3d .leather-base {
+  box-shadow:
+    0 22px 40px rgba(0, 0, 0, 0.5),
+    0 6px 12px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 220, 180, 0.08),
+    inset 0 0 40px rgba(0, 0, 0, 0.45);
 }
 
 .spread[data-fade] .slot {
@@ -358,6 +516,7 @@ button {
   touch-action: none;
   cursor: text;
   z-index: 5;
+  pointer-events: auto;
 }
 
 /* ------------------------------------------------------------------ page */
@@ -675,14 +834,13 @@ button {
   height: 748px;
   transform-origin: 0 50%;
   transform-style: preserve-3d;
-  transform: perspective(2600px) rotateY(0deg);
   transition: transform 1.2s cubic-bezier(0.55, 0.05, 0.25, 1);
   cursor: pointer;
   z-index: 10;
+  pointer-events: auto;
 }
 
 .cover-open {
-  transform: perspective(2600px) rotateY(-180deg);
   pointer-events: none;
 }
 
@@ -808,6 +966,10 @@ button {
   text-align: left;
 }
 
+.index-side .index-item span {
+  white-space: nowrap;
+}
+
 .index-side .index-item:hover {
   background: rgba(60, 40, 20, 0.07);
 }
@@ -828,7 +990,7 @@ button {
   height: calc(64px + var(--safe-b));
   padding: 0 4px var(--safe-b);
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   background:
     var(--tex-leather),
     linear-gradient(180deg, var(--leather-1), var(--leather-2));
@@ -1553,7 +1715,11 @@ button {
 
 .reduced .book,
 .reduced .cover,
-.reduced .stage {
+.reduced .stage,
+.reduced .desk-plane,
+.reduced .sheet,
+.reduced .sheet-strip,
+.reduced .block-edge {
   transition-duration: 0.01s !important;
 }
 

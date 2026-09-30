@@ -28,10 +28,13 @@ Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml` (en
 
 Phones (and tablets held upright) show one page at a time, like a pocket notebook; wider screens show a two-page spread.
 
+**3D view.** Tap *3D view* in the index (or pick it in Settings → View) to see the journal lying on the desk in perspective. The covers and page block have thickness, and the block is taller on the side with more pages. Pages rise out of the spine, and a turning page lifts off the book as a bending sheet with shadows. When you start writing, the camera straightens up so the handwriting is easy to read, and it tilts back when you tap Done. If 3D page turns run slowly on a device, the app switches to the lighter flat page turn.
+
 ## How it's built
 
 - React + TypeScript + Vite; everything runs on the device. Entries and photos are stored in IndexedDB (Dexie). Nothing is sent to a server.
 - **Page turns** (`src/lib/geometry.ts`, `src/components/Book.tsx`): the turning page is folded along the perpendicular bisector between its resting corner and your finger. The page is drawn in three layers: the still-flat part (clip-path), the folded flap showing the back of the page (a reflection matrix plus clip-path), and the page revealed underneath. SVG gradients add the shadows. Each animation frame writes straight to the DOM, so turns stay smooth on phones.
+- **3D view** (`src/lib/camera.ts`, `src/lib/sheet.ts`, `src/components/Sheet.tsx`): the camera is a CSS perspective transform built from the same matrix used to map taps back onto the tilted page. In 3D, a page is a chain of hinged strips: two for an open page (the rise at the spine, then the flat part) and five to seven for a turning page, whose outer edge leads so the sheet bends.
 - **Handwriting** (`src/lib/layout.ts`, `src/components/Page.tsx`): a paginator measures words with the chosen handwriting font and places every line on a ruled line. Words get a small, deterministic variation in angle, baseline and ink density. Typing goes into a hidden textarea, so native keyboards, autocorrect, IME and undo all work; the caret and selection are drawn on the paper.
 - **Paper** (`src/lib/paper.ts`): procedural fibres, grain and mottling, torn deckle edges (unique per page), gutter shading, faint show-through of the other side of the sheet, and marbled endpapers.
 - Fonts are self-hosted (Fontsource, OFL): Dancing Script, Caveat, Homemade Apple, Kalam, Atkinson Hyperlegible, Inter.

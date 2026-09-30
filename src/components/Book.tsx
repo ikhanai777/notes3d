@@ -10,7 +10,10 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { computeFold, polygonCss, pointsAttr, progressOf, restCorner, type Corner, type Pt } from '../lib/geometry';
 import { flipFaces, leftOf, maxSpread, rightOf, type FlipFaces, type Mode, type PageRef } from '../lib/book';
 import { PAGE } from '../lib/layout';
+import { CAMERAS, fitCamera, PHONE_PERSPECTIVE, unproject, type Fit } from '../lib/camera';
+import { relative, restLift, shadeAt, stripEdges, turningLift } from '../lib/sheet';
 import type { Side } from './Page';
+import { Sheet, type SheetApi } from './Sheet';
 
 const W = PAGE.W;
 const H = PAGE.H;
@@ -36,6 +39,14 @@ interface BookProps {
   onTurnEnd?: () => void;
   reducedMotion: boolean;
   goto: GotoRequest | null;
+  /** Show the book in perspective on the desk. */
+  perspective: boolean;
+  /** Look straight down for now (e.g. while writing), keeping the perspective style. */
+  flatten: boolean;
+  /** Pages with low-power turns (set when 3D turns are too slow on this device). */
+  onLowPower?: () => void;
+  lowPower: boolean;
+  compact: boolean;
 }
 
 interface TurnState {
@@ -58,21 +69,30 @@ export function viewBox(mode: Mode, open: boolean) {
   return { x0: -26, x1: 2 * W + 44, y0, y1 };
 }
 
-/** Scale and offset that fit the book into a width × height area. */
-export function fitBook(mode: Mode, open: boolean, width: number, height: number) {
-  const vb = viewBox(mode, open);
-  const scale = Math.max(0.1, Math.min(width / (vb.x1 - vb.x0), height / (vb.y1 - vb.y0)));
-  const tx = (width - (vb.x1 - vb.x0) * scale) / 2 - vb.x0 * scale;
-  const ty = (height - (vb.y1 - vb.y0) * scale) / 2 - vb.y0 * scale;
-  return { scale, tx, ty };
+/** Where the camera is and how the book fits into a width × height area. */
+export function fitBook(mode: Mode, open: boolean, width: number, height: number, tilted = false): Fit {
+  const cam = tilted ? (mode === 'one' ? PHONE_PERSPECTIVE : CAMERAS.perspective) : CAMERAS.flat;
+  return fitCamera(viewBox(mode, open), cam, width, height);
 }
 
+/** Height of the page block on each side, in book pixels. */
+function blockDepth(spread: number, max: number) {
+  const f = max > 0 ? spread / max : 0;
+  return { left: 3 + 12 * f, right: 3 + 12 * (1 - f) };
+}
+
+const STATIC_EDGES = [0, 56, W];
+
 export function Book(props: BookProps) {
-  const { mode, pageCount, spread, open, width, height } = props;
+  const { mode, pageCount, spread, open, width, height, perspective, flatten, lowPower, compact } = props;
   const uid = useId().replace(/:/g, '');
   const [turn, setTurn] = useState<{ faces: FlipFaces; corner: Corner } | null>(null);
   const [fade, setFade] = useState(0);
   const [coverGone, setCoverGone] = useState(open);
+  const tilted = perspective && !flatten;
+  /** Turn pages as bending sheets in 3D (otherwise: the flat fold). */
+  const turns3D = perspective && !lowPower;
+  const lifted = tilted && !lowPower;
 
   const state = useRef<TurnState | null>(null);
   const animRef = useRef<number | null>(null);
@@ -89,17 +109,68 @@ export function Book(props: BookProps) {
   const shadePoly = useRef<SVGPolygonElement>(null);
   const shadeGrad = useRef<SVGLinearGradientElement>(null);
   const bookEl = useRef<HTMLDivElement>(null);
+  const leafApi = useRef<SheetApi>(null);
+  const leftApi = useRef<SheetApi>(null);
+  const rightApi = useRef<SheetApi>(null);
+  const frames = useRef({ n: 0, total: 0, last: 0, strikes: 0 });
 
   // --- Fit on screen --------------------------------------------------------
-  const { scale, tx, ty } = fitBook(mode, open, width, height);
-  const fit = useRef({ scale, tx, ty });
-  fit.current = { scale, tx, ty };
+  const fitNow = fitBook(mode, open, width, height, tilted);
+  const fit = useRef(fitNow);
+  fit.current = fitNow;
+  const max = maxSpread(mode, pageCount);
+  const depth = tilted ? blockDepth(spread, max) : { left: 0, right: 0 };
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
+  const leafEdges = stripEdges(W, compact ? 5 : 7);
+  const geo = useRef({ turns3D, lifted, leafEdges, mode });
+  geo.current = { turns3D, lifted, leafEdges, mode };
 
   // --- Geometry -------------------------------------------------------------
   const lift = (x: number, corner: Corner) => (corner === 'bottom' ? -1 : 1) * 0.05 * H * Math.sin(Math.PI * progressOf({ x, y: 0 }, W));
 
+  /** Draw the turning page as a bending sheet lifting off the book. */
+  const apply3D = useCallback((s: TurnState) => {
+    const leaf = leafApi.current;
+    if (!leaf) return;
+    const g = geo.current;
+    const pr = Math.min(1, Math.max(0, progressOf({ x: s.x, y: 0 }, W)));
+    const theta = 180 * pr;
+    const abs = turningLift(g.leafEdges, W, theta, 1, g.lifted);
+    leaf.setAngles(relative(abs));
+    const n = abs.length;
+    const bd = [abs[0], ...abs.slice(1).map((a, i) => (a + abs[i]) / 2), abs[n - 1]];
+    const shade = Array.from({ length: n }, (_, i) => [shadeAt(bd[i]), shadeAt(bd[i + 1])] as [number, number]);
+    leaf.setShade(shade, shade);
+    const d = depthRef.current;
+    const back = s.faces.dir === 'back';
+    const [zStart, zEnd] = back ? [d.left, d.right] : [d.right, d.left];
+    leaf.setLift(zStart + (zEnd - zStart) * pr + 0.6);
+    if (g.mode === 'one') {
+      // Only the right-hand page is on screen: fade the sheet while it is over the left.
+      const vis = abs.map((a) => (back ? Math.min(1, Math.max(0, (a - 30) / 40)) : Math.min(1, Math.max(0, (150 - a) / 40))));
+      leaf.setOpacity(vis, vis);
+    }
+    // Shadows the lifted sheet casts on the pages below it.
+    const sn = Math.sin((theta * Math.PI) / 180);
+    const cast = (phi: number) => {
+      const c = Math.cos((phi * Math.PI) / 180);
+      const k = Math.pow(Math.max(0, Math.sin((phi * Math.PI) / 180)), 0.7);
+      if (phi <= 90) {
+        const reach = Math.max(4, c * 100);
+        return `linear-gradient(var(--from-spine), rgba(20,12,4,${(0.1 * k).toFixed(3)}) 0%, rgba(20,12,4,${(0.34 * k).toFixed(3)}) ${(reach * 0.92).toFixed(1)}%, rgba(20,12,4,0) ${Math.min(100, reach + 14).toFixed(1)}%)`;
+      }
+      return `linear-gradient(var(--from-spine), rgba(20,12,4,${(0.22 * k).toFixed(3)}) 0%, rgba(20,12,4,0) ${(8 + 22 * k).toFixed(1)}%)`;
+    };
+    const startSide = back ? leftApi.current : rightApi.current;
+    const endSide = back ? rightApi.current : leftApi.current;
+    startSide?.setPageShade(sn > 0.001 ? cast(theta) : '');
+    endSide?.setPageShade(sn > 0.001 ? cast(180 - theta) : '');
+  }, []);
+
   const apply = useCallback(() => {
     const s = state.current;
+    if (s && geo.current.turns3D) return apply3D(s);
     if (!s || !frontEl.current || !flapEl.current || !flapClipEl.current) return;
     const held: Pt = { x: s.x, y: s.yBase + lift(s.x, s.corner) };
     const f = computeFold(s.faces.dir, s.corner, held, W, H);
@@ -139,7 +210,7 @@ export function Book(props: BookProps) {
       sg.setAttribute('x2', String(m.x - n.x * half));
       sg.setAttribute('y2', String(m.y - n.y * half));
     }
-  }, []);
+  }, [apply3D]);
 
   const stopAnim = () => {
     if (animRef.current !== null) cancelAnimationFrame(animRef.current);
@@ -151,6 +222,16 @@ export function Book(props: BookProps) {
     stopAnim();
     state.current = null;
     setTurn(null);
+    leftApi.current?.setPageShade('');
+    rightApi.current?.setPageShade('');
+    // Fall back to the lighter page turn if 3D turns run slowly on this device.
+    const f = frames.current;
+    if (geo.current.turns3D && f.n > 8 && f.total / f.n > 30) {
+      f.strikes++;
+      if (f.strikes >= 2) propsRef.current.onLowPower?.();
+    }
+    f.n = 0;
+    f.total = 0;
     if (s && completed) {
       propsRef.current.onSpreadChange(s.faces.to);
       propsRef.current.onTurnEnd?.();
@@ -167,13 +248,22 @@ export function Book(props: BookProps) {
       const c0 = restCorner(s.corner, W, H);
       const t0 = performance.now();
       const step = (now: number) => {
+        const f = frames.current;
+        if (f.last) {
+          f.n++;
+          f.total += now - f.last;
+        }
+        f.last = now;
         const t = Math.min(1, (now - t0) / dur);
         const e = easing(t);
         s.x = x0 + (toX - x0) * e;
         s.yBase = y0 + (c0.y - y0) * e;
         apply();
         if (t < 1) animRef.current = requestAnimationFrame(step);
-        else finish(toX < W);
+        else {
+          frames.current.last = 0;
+          finish(toX < W);
+        }
       };
       animRef.current = requestAnimationFrame(step);
     },
@@ -259,8 +349,8 @@ export function Book(props: BookProps) {
 
   const toBook = (e: { clientX: number; clientY: number }): Pt => {
     const r = bookEl.current!.parentElement!.getBoundingClientRect();
-    const f = fit.current;
-    return { x: (e.clientX - r.left - f.tx) / f.scale, y: (e.clientY - r.top - f.ty) / f.scale };
+    const d = depthRef.current;
+    return unproject(fit.current.matrix, { x: e.clientX - r.left, y: e.clientY - r.top }, (d.left + d.right) / 2);
   };
   /** Pointer position in the forward frame of the current turn. */
   const fwdX = (x: number) => (state.current?.faces.dir === 'back' ? 2 * W - x : x);
@@ -360,33 +450,81 @@ export function Book(props: BookProps) {
   const faces = turn?.faces;
   const leftStatic = faces ? (faces.dir === 'fwd' ? faces.still : faces.under) : leftOf(mode, spread);
   const rightStatic = faces ? (faces.dir === 'fwd' ? faces.under : faces.still) : rightOf(mode, spread, pageCount);
-  const max = maxSpread(mode, pageCount);
   const shownSpread = faces ? faces.to : spread;
   const stackL = Math.min(10, 1.5 + shownSpread * 0.14);
   const stackR = Math.min(10, 1.5 + (max - shownSpread) * 0.14);
   const showLeft = open && mode === 'two';
+  const staticLift = relative(restLift(2, lifted));
+  const foldZ = Math.max(depth.left, depth.right) + 0.6;
+  const leatherLeft = showLeft ? -16 : W - 10;
+
+  const staticPage = (ref: PageRef, side: Side) =>
+    perspective ? (
+      <Sheet
+        key={side}
+        className={`sheet-static sheet-${side}`}
+        edges={STATIC_EDGES}
+        mirror={side === 'left'}
+        angles={staticLift}
+        z={side === 'left' ? depth.left : depth.right}
+        api={side === 'left' ? leftApi : rightApi}
+        front={props.renderPage(ref, side, 'static')}
+      />
+    ) : (
+      <div key={side} className="slot" style={{ left: side === 'left' ? 0 : W }}>
+        {props.renderPage(ref, side, 'static')}
+      </div>
+    );
 
   return (
     <div className="book-area" style={{ width, height }}>
       <div
         ref={bookEl}
         className={`book book-${mode} ${open ? 'is-open' : 'is-closed'}`}
-        style={{ transform: `translate(${tx}px, ${ty}px) scale(${scale})` }}
+        style={{ transform: fitNow.css }}
       >
-        <div className={`spread ${mode === 'one' ? 'spread-one' : ''}`} key={`fade-${fade}`} data-fade={fade > 0 || undefined}>
-          <div className="leather-base" style={showLeft ? undefined : { left: W - 10 }} />
-          {showLeft && <div className="stack stack-left" style={{ width: stackL, left: -stackL }} />}
-          <div className="stack stack-right" style={{ width: stackR }} />
-          <div className="strap" aria-hidden>
+        <div className={`spread ${perspective ? 'spread-3d' : ''}`} key={`fade-${fade}`} data-fade={fade > 0 || undefined}>
+          <div className="leather-base" style={{ left: leatherLeft }} />
+          {perspective && (
+            <>
+              <div className="board-edge board-edge-bottom" style={{ left: leatherLeft, width: 2 * W + 16 - leatherLeft }} />
+              <div className="board-edge board-edge-right" />
+              <div className="block-edge block-edge-x" style={{ left: 2 * W, width: depth.right, transform: `translateZ(${depth.right}px) rotateY(90deg)` }} />
+              <div className="block-edge block-edge-y" style={{ left: W, width: W, height: depth.right, transform: `translateZ(${depth.right}px) rotateX(-90deg)` }} />
+              {showLeft && (
+                <>
+                  <div className="block-edge block-edge-x block-edge-left" style={{ left: -depth.left, width: depth.left, transform: `translateZ(${depth.left}px) rotateY(-90deg)` }} />
+                  <div className="block-edge block-edge-y" style={{ left: 0, width: W, height: depth.left, transform: `translateZ(${depth.left}px) rotateX(-90deg)` }} />
+                </>
+              )}
+            </>
+          )}
+          {!perspective && showLeft && <div className="stack stack-left" style={{ width: stackL, left: -stackL }} />}
+          {!perspective && <div className="stack stack-right" style={{ width: stackR }} />}
+          <div className="strap" aria-hidden style={perspective ? { transform: `translateZ(${Math.max(2, depth.right * 0.6)}px)` } : undefined}>
             <div className="strap-snap" />
           </div>
           <div className="spine-shadow" />
 
-          {showLeft && <div className="slot" style={{ left: 0 }}>{props.renderPage(leftStatic, 'left', 'static')}</div>}
-          <div className="slot" style={{ left: W }}>{props.renderPage(rightStatic, 'right', 'static')}</div>
+          {showLeft && staticPage(leftStatic, 'left')}
+          {staticPage(rightStatic, 'right')}
 
-          {faces && (
-            <>
+          {faces && turns3D && (
+            <Sheet
+              key="leaf"
+              className="sheet-leaf"
+              edges={leafEdges}
+              mirror={faces.dir === 'back'}
+              angles={relative(restLift(leafEdges.length - 1, lifted))}
+              z={(faces.dir === 'back' ? depth.left : depth.right) + 0.6}
+              api={leafApi}
+              front={props.renderPage(faces.front, faces.dir === 'fwd' ? 'right' : 'left', 'layer')}
+              back={props.renderPage(faces.back, faces.dir === 'fwd' ? 'left' : 'right', 'layer')}
+            />
+          )}
+
+          {faces && !turns3D && (
+            <div className={`fold-plane ${mode === 'one' ? 'fold-plane-one' : ''}`} style={{ transform: `translateZ(${foldZ}px)` }}>
               <div ref={frontEl} className="slot turning" style={{ left: faces.dir === 'fwd' ? W : 0 }}>
                 {props.renderPage(faces.front, faces.dir === 'fwd' ? 'right' : 'left', 'layer')}
               </div>
@@ -421,11 +559,12 @@ export function Book(props: BookProps) {
                 </defs>
                 <polygon ref={shadePoly} fill={`url(#sg${uid})`} />
               </svg>
-            </>
+            </div>
           )}
 
           <div
             className="hit"
+            style={perspective ? { transform: `translateZ(${Math.max(depth.left, depth.right) + 40}px)` } : undefined}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -439,6 +578,7 @@ export function Book(props: BookProps) {
         {!coverGone && (
           <div
             className={`cover ${open ? 'cover-open' : ''} ${mode === 'one' ? 'cover-one' : ''}`}
+            style={{ transform: `translateZ(${(perspective ? blockDepth(0, max).right : 0) + 1}px) rotateY(${open ? -180 : 0}deg)` }}
             onClick={() => !open && props.onOpen()}
             onTransitionEnd={(e) => e.propertyName === 'transform' && open && setCoverGone(true)}
             role={open ? undefined : 'button'}

@@ -264,6 +264,16 @@ export function SettingsPanel({
       </fieldset>
 
       <fieldset>
+        <legend>View</legend>
+        <Segmented
+          value={settings.view}
+          onChange={(v) => set('view', v)}
+          options={[['flat', 'Flat, from above'], ['perspective', '3D, on the desk']]}
+        />
+        <p className="hint">The 3D view straightens up while you write, so your handwriting is easy to read.</p>
+      </fieldset>
+
+      <fieldset>
         <legend>Desk</legend>
         <Segmented<ThemeId>
           value={settings.theme}

@@ -19,7 +19,8 @@ export function Desk({ theme, props, onPen, camera, distance, children }: DeskPr
     <div className={`desk theme-${theme}`}>
       <div
         className="desk-plane"
-        style={{ transform: `perspective(${distance.toFixed(0)}px) rotateX(${camera.tilt}deg) rotateZ(${camera.turn}deg)` }}
+        // Looking straight down needs no 3D transform; leaving it off keeps the big desk layer cheap.
+        style={{ transform: camera.tilt || camera.turn ? `perspective(${distance.toFixed(0)}px) rotateX(${camera.tilt}deg) rotateZ(${camera.turn}deg)` : 'none' }}
       >
         <div className="desk-wood" />
         {showProps && (

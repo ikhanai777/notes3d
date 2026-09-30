@@ -51,7 +51,7 @@ export const Page = memo(function Page(props: PageProps) {
 
   const ghost = kind === 'ghost';
   return (
-    <div className={`page page-${side}`} aria-hidden={hidden || ghost || undefined}>
+    <div className={`page page-${side} ${caret || selection?.length ? 'page-editing' : ''}`} aria-hidden={hidden || ghost || undefined}>
       <div className="paper" style={{ clipPath: deckle }}>
         {page?.kind !== 'title' && <Rules template={settings.paper} seed={seed} />}
         {ghost && page && (

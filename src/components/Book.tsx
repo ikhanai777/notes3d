@@ -115,7 +115,6 @@ export function Book(props: BookProps) {
   const flapClipEl = useRef<HTMLDivElement>(null);
   const revealPoly = useRef<SVGPolygonElement>(null);
   const revealGrad = useRef<SVGLinearGradientElement>(null);
-  const dropPoly = useRef<SVGPolygonElement>(null);
   const shadePoly = useRef<SVGPolygonElement>(null);
   const shadeGrad = useRef<SVGLinearGradientElement>(null);
   const bookEl = useRef<HTMLDivElement>(null);
@@ -214,7 +213,7 @@ export function Book(props: BookProps) {
     const held: Pt = { x: s.x, y: s.yBase + lift(s.x, s.corner) };
     const f = computeFold(s.faces.dir, s.corner, held, W, H);
     frontEl.current.style.clipPath = polygonCss(f.frontClip);
-    const polys = [revealPoly.current, dropPoly.current, shadePoly.current];
+    const polys = [revealPoly.current, shadePoly.current];
     if (f.flat) {
       flapEl.current.style.visibility = 'hidden';
       polys.forEach((p) => p?.setAttribute('points', ''));
@@ -237,8 +236,6 @@ export function Book(props: BookProps) {
       rg.setAttribute('x2', String(m.x + n.x * shadowW));
       rg.setAttribute('y2', String(m.y + n.y * shadowW));
     }
-    dropPoly.current?.setAttribute('points', pointsAttr(f.flap.map((q) => ({ x: q.x - n.x * 4, y: q.y - n.y * 4 + 3 }))));
-    dropPoly.current?.setAttribute('opacity', (0.32 * strength).toFixed(3));
     shadePoly.current?.setAttribute('points', pointsAttr(f.flap));
     shadePoly.current?.setAttribute('opacity', strength.toFixed(3));
     const sg = shadeGrad.current;
@@ -519,8 +516,8 @@ export function Book(props: BookProps) {
     <div className="book-area" style={{ width, height }}>
       <div
         ref={bookEl}
-        className={`book book-${mode} ${open ? 'is-open' : 'is-closed'} ${w && open ? 'is-writing' : ''}`}
-        style={{ transform: fitNow.css }}
+        className={`book book-${mode} ${perspective ? 'book-3d' : ''} ${open ? 'is-open' : 'is-closed'} ${w && open ? 'is-writing' : ''}`}
+        style={{ transform: perspective ? fitNow.css : `translate(${fitNow.tx.toFixed(2)}px, ${fitNow.ty.toFixed(2)}px) scale(${fitNow.scale.toFixed(5)})` }}
       >
         <div className={`spread ${perspective ? 'spread-3d' : ''}`} key={`fade-${fade}`} data-fade={fade > 0 || undefined}>
           <div className="leather-base" style={{ left: leatherLeft }} />
@@ -574,12 +571,8 @@ export function Book(props: BookProps) {
                     <stop offset="0.35" stopColor="#1a1008" stopOpacity="0.16" />
                     <stop offset="1" stopColor="#1a1008" stopOpacity="0" />
                   </linearGradient>
-                  <filter id={`bl${uid}`} x="-20%" y="-20%" width="140%" height="140%">
-                    <feGaussianBlur stdDeviation="7" />
-                  </filter>
                 </defs>
                 <polygon ref={revealPoly} fill={`url(#rg${uid})`} />
-                <polygon ref={dropPoly} fill="#1a1008" filter={`url(#bl${uid})`} />
               </svg>
               <div ref={flapEl} className="flap">
                 <div ref={flapClipEl} className="flap-clip">
@@ -617,7 +610,8 @@ export function Book(props: BookProps) {
         {!coverGone && (
           <div
             className={`cover ${open ? 'cover-open' : ''} ${mode === 'one' ? 'cover-one' : ''}`}
-            style={{ transform: `translateZ(${(perspective ? blockDepth(0, max).right : 0) + 1}px) rotateY(${open ? -180 : 0}deg)` }}
+            // In the 3D view the camera supplies the perspective; the flat view gives the cover its own.
+            style={{ transform: `${perspective ? '' : 'perspective(2600px) '}translateZ(${(perspective ? blockDepth(0, max).right : 0) + 1}px) rotateY(${open ? -180 : 0}deg)` }}
             onClick={() => !open && props.onOpen()}
             onTransitionEnd={(e) => e.propertyName === 'transform' && open && setCoverGone(true)}
             role={open ? undefined : 'button'}

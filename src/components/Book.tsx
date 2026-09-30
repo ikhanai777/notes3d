@@ -10,7 +10,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { computeFold, polygonCss, pointsAttr, progressOf, restCorner, type Corner, type Pt } from '../lib/geometry';
 import { flipFaces, leftOf, maxSpread, rightOf, type FlipFaces, type Mode, type PageRef } from '../lib/book';
 import { PAGE } from '../lib/layout';
-import { CAMERAS, fitCamera, PHONE_PERSPECTIVE, unproject, type Fit } from '../lib/camera';
+import { CAMERAS, fitCamera, PHONE_PERSPECTIVE, placeCamera, unproject, type Fit } from '../lib/camera';
 import { relative, restLift, shadeAt, stripEdges, turningLift } from '../lib/sheet';
 import type { Side } from './Page';
 import { Sheet, type SheetApi } from './Sheet';
@@ -47,6 +47,16 @@ interface BookProps {
   onLowPower?: () => void;
   lowPower: boolean;
   compact: boolean;
+  /** While writing: zoom in on the page being written and keep the caret line in view. */
+  writing?: WritingFocus | null;
+}
+
+export interface WritingFocus {
+  page: number;
+  /** Baseline of the caret's line, in page pixels. */
+  caretY: number;
+  /** Height of the part of the book area that isn't covered (e.g. by the keyboard). */
+  visibleHeight: number;
 }
 
 interface TurnState {
@@ -115,7 +125,36 @@ export function Book(props: BookProps) {
   const frames = useRef({ n: 0, total: 0, last: 0, strikes: 0 });
 
   // --- Fit on screen --------------------------------------------------------
-  const fitNow = fitBook(mode, open, width, height, tilted);
+  // While writing, the camera looks straight down at the text column of the page being
+  // written, zoomed to the screen width. It only scrolls when the caret leaves the
+  // comfortable middle band, so the page holds still while you type.
+  const writeCam = useRef<{ page: number; scale: number; ty: number } | null>(null);
+  let fitNow: Fit;
+  const w = props.writing;
+  if (w && open) {
+    const slotX = mode === 'two' && w.page % 2 === 1 ? 0 : W;
+    const x0 = slotX + PAGE.MX - 20;
+    const x1 = slotX + W - PAGE.MX + 20;
+    const sc = Math.min(width / (x1 - x0), 2.2);
+    const tx = (width - (x1 - x0) * sc) / 2 - x0 * sc;
+    const vis = Math.max(120, Math.min(height, w.visibleHeight));
+    const clampTy = (t: number) => {
+      const hi = 12;
+      const lo = vis - (H + 12) * sc;
+      return lo > hi ? (vis - H * sc) / 2 : Math.min(hi, Math.max(lo, t));
+    };
+    const prev = writeCam.current;
+    let ty: number;
+    if (prev && prev.page === w.page && Math.abs(prev.scale - sc) < 1e-3) {
+      const y = prev.ty + w.caretY * sc;
+      ty = y > vis * 0.14 && y < vis * 0.66 ? clampTy(prev.ty) : clampTy(vis * 0.4 - w.caretY * sc);
+    } else ty = clampTy(vis * 0.4 - w.caretY * sc);
+    writeCam.current = { page: w.page, scale: sc, ty };
+    fitNow = placeCamera(viewBox(mode, open), CAMERAS.flat, sc, tx, ty);
+  } else {
+    writeCam.current = null;
+    fitNow = fitBook(mode, open, width, height, tilted);
+  }
   const fit = useRef(fitNow);
   fit.current = fitNow;
   const max = maxSpread(mode, pageCount);
@@ -480,7 +519,7 @@ export function Book(props: BookProps) {
     <div className="book-area" style={{ width, height }}>
       <div
         ref={bookEl}
-        className={`book book-${mode} ${open ? 'is-open' : 'is-closed'}`}
+        className={`book book-${mode} ${open ? 'is-open' : 'is-closed'} ${w && open ? 'is-writing' : ''}`}
         style={{ transform: fitNow.css }}
       >
         <div className={`spread ${perspective ? 'spread-3d' : ''}`} key={`fade-${fade}`} data-fade={fade > 0 || undefined}>

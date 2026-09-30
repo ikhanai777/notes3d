@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Book, fitBook, type GotoRequest } from './components/Book';
 import { CAMERAS, DISTANCE, PHONE_PERSPECTIVE } from './lib/camera';
 import { InkCtx, type InkContext, type PhotoInfo } from './components/context';
@@ -52,6 +52,16 @@ function useViewport() {
     };
   }, []);
   return vp;
+}
+
+/** A value that only updates once it has stopped changing (e.g. while the keyboard slides in). */
+function useSettled<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = window.setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
 }
 
 function usePrefersReducedMotion() {
@@ -158,12 +168,18 @@ export default function App() {
   const layout = useStablePages(rawLayout);
   const pageCount = layout?.pages.length ?? 4;
 
-  const mode: Mode = vp.w >= 760 && vp.w > vp.h * 1.05 ? 'two' : 'one';
-  const keyboardOpen = vp.vvh < vp.h - 120;
+  // The on-screen keyboard shrinks the window on Android. Keep laying the book out for
+  // the full screen while writing, so it doesn't jump to a smaller size or another layout.
+  const stable = useRef({ w: vp.w, h: vp.h });
+  if (!editing || vp.w !== stable.current.w || vp.h > stable.current.h) stable.current = { w: vp.w, h: vp.h };
+  const layoutH = stable.current.h;
+  const mode: Mode = vp.w >= 760 && vp.w > layoutH * 1.05 ? 'two' : 'one';
+  const settledVvh = useSettled(vp.vvh, 180);
+  const keyboardOpen = vp.vvh < layoutH - 120;
   const wide = mode === 'two';
   const navSpace = wide ? 140 : 0;
   const bottomBar = wide ? 0 : 68;
-  const area = { w: Math.max(200, vp.w - navSpace * 2 - (wide ? 16 : 12)), h: Math.max(200, vp.h - bottomBar - vp.safeTop - (wide ? 36 : 20)) };
+  const area = { w: Math.max(200, vp.w - navSpace * 2 - (wide ? 16 : 12)), h: Math.max(200, layoutH - bottomBar - vp.safeTop - (wide ? 36 : 20)) };
 
   // Keep the spread valid when the mode or page count changes.
   const lastMode = useRef(mode);
@@ -518,17 +534,23 @@ export default function App() {
   const tilted = perspective && !editing;
   const fit = fitBook(mode, open, area.w, area.h, tilted);
   const areaTop = (wide ? 18 : 10) + vp.safeTop;
-  let shift = 0;
-  if (editing && caret && keyboardOpen) {
-    const barH = 56;
-    const caretY = areaTop + fit.ty + caret.y * fit.scale;
-    const limit = vp.vvh - barH - 24;
-    if (caretY > limit) shift = caretY - vp.vvh * 0.42;
-  }
-  // Position the hidden input next to the caret so the browser doesn't scroll the page to find it.
-  useLayoutEffect(() => {
-    if (keyboardOpen && window.scrollY) window.scrollTo(0, 0);
-  }, [keyboardOpen, vp.vvTop]);
+  // Zoom in on the writing on phones, and on any device while its on-screen keyboard is up.
+  const softKeyboard = settledVvh < layoutH - 120;
+  const writingVisible = Math.min(area.h, settledVvh - areaTop - (wide ? 96 : 64));
+  const writing =
+    editing && caret && open && (mode === 'one' || softKeyboard) ? { page: caret.page, caretY: caret.y, visibleHeight: writingVisible } : null;
+  // The page never scrolls; undo any scroll the browser makes to reveal the hidden input.
+  useEffect(() => {
+    const on = () => {
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
+    };
+    window.addEventListener('scroll', on);
+    window.visualViewport?.addEventListener('scroll', on);
+    return () => {
+      window.removeEventListener('scroll', on);
+      window.visualViewport?.removeEventListener('scroll', on);
+    };
+  }, []);
 
   // --- Rendering ------------------------------------------------------------------
   const inkCtx: InkContext | null = useMemo(
@@ -590,7 +612,7 @@ export default function App() {
           camera={tilted ? (mode === 'one' ? PHONE_PERSPECTIVE : CAMERAS.perspective) : CAMERAS.flat}
           distance={DISTANCE * fit.scale}
         >
-          <main className="stage" style={{ transform: shift ? `translateY(${-shift}px)` : undefined, top: areaTop, left: (vp.w - area.w) / 2, width: area.w, height: area.h }}>
+          <main className="stage" style={{ top: areaTop, left: (vp.w - area.w) / 2, width: area.w, height: area.h }}>
             <Book
               mode={mode}
               pageCount={pageCount}
@@ -612,6 +634,7 @@ export default function App() {
               lowPower={lowPower}
               onLowPower={() => setLowPower(true)}
               compact={!wide}
+              writing={writing}
             />
           </main>
         </Desk>
@@ -733,7 +756,7 @@ export default function App() {
           onSelect={readSel}
           onKeyUp={readSel}
           onBlur={onBlur}
-          style={caret ? { top: Math.min(vp.vvh - 40, Math.max(0, areaTop + fit.ty + caret.y * fit.scale - shift - 20)) } : undefined}
+          style={caret ? { top: Math.round(areaTop + Math.max(0, writingVisible) * 0.4) } : undefined}
         />
         <input
           ref={dateInput}

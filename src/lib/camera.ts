@@ -121,6 +121,17 @@ export function fitCamera(box: Box, cam: CameraAngles, width: number, height: nu
   const scale = Math.max(0.1, Math.min(width / (px1 - px0), height / (py1 - py0)));
   const tx = (width - (px1 - px0) * scale) / 2 - px0 * scale;
   const ty = (height - (py1 - py0) * scale) / 2 - py0 * scale;
+  return placeCamera(box, cam, scale, tx, ty);
+}
+
+/**
+ * Build the matrix and CSS for a camera at a given scale and offset. Every
+ * camera uses the same CSS function list, so moving between them animates.
+ */
+export function placeCamera(box: Box, cam: CameraAngles, scale: number, tx: number, ty: number): Fit {
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const view = mul(mul(mul(mul(translate(cx, cy), perspective(DISTANCE)), rotX(cam.tilt)), rotZ(cam.turn)), translate(-cx, -cy));
   const matrix = mul(mul(translate(tx, ty), scale2(scale)), view);
   const css =
     `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${scale.toFixed(5)}) ` +

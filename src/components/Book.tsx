@@ -395,10 +395,12 @@ export function Book(props: BookProps) {
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (!open || e.button > 0) return;
+    // One finger turns the page; a second finger landing meanwhile is ignored.
+    if (drag.current || !e.isPrimary) return;
     const p = toBook(e);
     drag.current = { id: e.pointerId, start: p, last: p, lastT: e.timeStamp, vx: 0, decided: false, active: false, k: 1, x0: 0, y0: 0 };
-    if (state.current && animRef.current !== null) {
-      // Catch a turning page mid-air.
+    if (state.current) {
+      // Catch a turning page mid-air (or one left half-turned) and keep turning it by hand.
       stopAnim();
       const s = state.current;
       Object.assign(drag.current, { decided: true, active: true, k: mode === 'one' ? 2 : 1.3, x0: s.x, y0: s.yBase });
@@ -450,25 +452,54 @@ export function Book(props: BookProps) {
     });
   };
 
-  const onPointerUp = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d || d.id !== e.pointerId) return;
-    drag.current = null;
-    if (d.decided) suppressClick.current = e.timeStamp + 400;
-    if (!d.active || !state.current) return;
-    stopAnim();
+  /** The finger lifted (or the system took the gesture away): finish or release the page. */
+  const endDrag = useCallback(
+    (pointerId: number, cancelled: boolean, timeStamp: number) => {
+      const d = drag.current;
+      if (!d || d.id !== pointerId) return;
+      drag.current = null;
+      if (d.decided) suppressClick.current = timeStamp + 400;
+      if (!d.active || !state.current) return;
+      stopAnim();
+      const s = state.current;
+      const vF = s.faces.dir === 'back' ? -d.vx : d.vx; // book px per ms, negative = towards completion
+      const pr = progressOf({ x: s.x, y: 0 }, W);
+      const complete = !cancelled && (vF < -0.25 || (pr > 0.4 && vF < 0.25));
+      const remaining = complete ? (pr > 1 ? 0 : 1 - pr) : pr;
+      const dur = Math.max(160, 620 * remaining);
+      if (complete) propsRef.current.onTurnStart?.(dur);
+      animateTo(complete ? 0 : 2 * W, dur, ease.out);
+    },
+    [animateTo],
+  );
+
+  // Listen on the whole window, so a lift is never missed even if the page stops receiving
+  // the finger's events (system gestures, the keyboard appearing, a lost pointer capture).
+  useEffect(() => {
+    const up = (e: PointerEvent) => endDrag(e.pointerId, e.type === 'pointercancel', e.timeStamp);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+  }, [endDrag]);
+
+  /** Settle a page that was left part-way through a turn with nothing moving it. */
+  const settleOrphan = () => {
     const s = state.current;
-    const vF = s.faces.dir === 'back' ? -d.vx : d.vx; // book px per ms, negative = towards completion
+    if (!s || drag.current || animRef.current !== null) return false;
     const pr = progressOf({ x: s.x, y: 0 }, W);
-    const complete = e.type !== 'pointercancel' && (vF < -0.25 || (pr > 0.4 && vF < 0.25));
-    const remaining = complete ? pr > 1 ? 0 : 1 - pr : pr;
-    const dur = Math.max(160, 620 * remaining);
-    if (complete) propsRef.current.onTurnStart?.(dur);
-    animateTo(complete ? 0 : 2 * W, dur, ease.out);
+    animateTo(pr > 0.5 ? 0 : 2 * W, 300, ease.out);
+    return true;
   };
 
   const onClick = (e: React.MouseEvent) => {
-    if (!open || e.timeStamp < suppressClick.current || state.current) return;
+    if (!open || e.timeStamp < suppressClick.current) return;
+    if (state.current) {
+      settleOrphan();
+      return;
+    }
     const p = toBook(e);
     const side: Side = mode === 'one' || p.x >= W ? 'right' : 'left';
     const px = side === 'right' ? p.x - W : p.x;
@@ -601,8 +632,7 @@ export function Book(props: BookProps) {
             style={perspective ? { transform: `translateZ(${Math.max(depth.left, depth.right) + 40}px)` } : undefined}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
+            onLostPointerCapture={(e) => endDrag(e.pointerId, true, e.timeStamp)}
             onClick={onClick}
             // Keep the writing caret's focus when tapping around the page.
             onMouseDown={(e) => e.preventDefault()}
